@@ -191,6 +191,11 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
+  p->priority = 1;
+  p->qnext = 0;
+  p->qprev = 0;
+  p->in_queue = 0;
+
   dprintf(DBG_PROC, DBG_INFO, "process slot allocated: pid=%d", p->pid);
 
   // Allocate a trapframe page.
@@ -238,6 +243,12 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+
+  p->priority = 1;
+  p->qnext = 0;
+  p->qprev = 0;
+  p->in_queue = 0;
+
   p->state = UNUSED;
 }
 
@@ -297,6 +308,8 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+
+  enqueue(p);
 
   dprintf(DBG_PROC, DBG_INFO, "first user process created: pid=%d", p->pid);
 
@@ -371,7 +384,9 @@ kfork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
+  np->priority = p->priority;
   np->state = RUNNABLE;
+  enqueue(np);
   release(&np->lock);
 
   dprintf(DBG_PROC, DBG_INFO,
@@ -529,51 +544,47 @@ scheduler(void)
 
   c->proc = 0;
   for (;;) {
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting. Then turn them back off
-    // to avoid a possible race between an interrupt
-    // and wfi.
+    // Enable interrupts, then disable them before checking queues.
     intr_on();
     intr_off();
 
-    int found = 0;
-    for (p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if (p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        dprintf(DBG_SCHED, DBG_TRACE, "scheduler selected process");
-        swtch(&c->context, &p->context);
-
-        // Don't re-enable interrupts on release.
-        mycpu()->intena = 0;
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+    // Find the highest-priority nonempty queue.
+    p = 0;
+    for (int priority = 0; priority < NB_PRIORITY_LEVELS; priority++) {
+      if (ready_queues[priority].head != 0) {
+        p = ready_queues[priority].head;
+        break;
       }
-      release(&p->lock);
     }
-    if (found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
+
+    if (p != 0) {
+      acquire(&p->lock);
+
+      // A queued process must be runnable.
+      if (p->state != RUNNABLE || !p->in_queue)
+        panic("scheduler: invalid queued process");
+
+      // Remove the process before dispatching it.
+      dequeue(p);
+
+      p->state = RUNNING;
+      c->proc = p;
+
+      // Avoid printing in the scheduler's hot path.
+      swtch(&c->context, &p->context);
+
+      // The process switched back to the scheduler.
+      mycpu()->intena = 0;
+      c->proc = 0;
+
+      release(&p->lock);
+    } else {
+      // No runnable processes; wait for an interrupt.
       asm volatile("wfi");
     }
   }
 }
 
-// Switch to scheduler.  Must hold only p->lock
-// and have changed proc->state. Saves and restores
-// intena because intena is a property of this
-// kernel thread, not this CPU. It should
-// be proc->intena and proc->noff, but that would
-// break in the few places where a lock is held but
-// there's no process.
-void
 sched(void)
 {
   int intena;
@@ -600,6 +611,7 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+  enqueue(p);
   sched();
   release(&p->lock);
 }
@@ -686,6 +698,7 @@ wakeup(void *chan)
       // go to sleep, also set it back to RUNNING.
       if (p->state == SLEEPING) {
         p->state = RUNNABLE;
+        enqueue(p);
       }
     }
     release(&p->lock);
@@ -708,6 +721,7 @@ kkill(int pid)
       if (p->state == SLEEPING) {
         // Wake process from sleep().
         p->state = RUNNABLE;
+        enqueue(p);
       }
       release(&p->lock);
 
