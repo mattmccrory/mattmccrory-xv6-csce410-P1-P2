@@ -21,6 +21,70 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+struct ready_queue {
+  struct proc *head;
+  struct proc *tail;
+};
+
+static struct ready_queue ready_queues[NB_PRIORITY_LEVELS];
+
+// Add a runnable process to the tail of its priority queue.
+// Caller must hold p->lock.
+static void
+enqueue(struct proc *p)
+{
+  int priority = p->priority;
+
+  if (p->in_queue)
+    panic("enqueue: already queued");
+
+  if (priority < 0 || priority >= NB_PRIORITY_LEVELS)
+    panic("enqueue: invalid priority");
+
+  struct ready_queue *q = &ready_queues[priority];
+
+  p->qnext = 0;
+  p->qprev = q->tail;
+
+  if (q->tail)
+    q->tail->qnext = p;
+  else
+    q->head = p;
+
+  q->tail = p;
+  p->in_queue = 1;
+}
+
+// Remove a process from its priority queue.
+// Caller must hold p->lock.
+static void
+dequeue(struct proc *p)
+{
+  int priority = p->priority;
+
+  if (!p->in_queue)
+    panic("dequeue: not queued");
+
+  if (priority < 0 || priority >= NB_PRIORITY_LEVELS)
+    panic("dequeue: invalid priority");
+
+  struct ready_queue *q = &ready_queues[priority];
+
+  if (p->qprev)
+    p->qprev->qnext = p->qnext;
+  else
+    q->head = p->qnext;
+
+  if (p->qnext)
+    p->qnext->qprev = p->qprev;
+  else
+    q->tail = p->qprev;
+
+  p->qnext = 0;
+  p->qprev = 0;
+  p->in_queue = 0;
+}
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.

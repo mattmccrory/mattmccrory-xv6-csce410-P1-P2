@@ -89,6 +89,12 @@ struct proc {
   int xstate;           // Exit status to be returned to parent's wait
   int pid;              // Process ID
 
+  // P2 scheduling fields; protect with p->lock.
+  int priority;
+  struct proc *qnext;
+  struct proc *qprev;
+  int in_queue;
+
   // wait_lock must be held when using this:
   struct proc *parent; // Parent process
 
