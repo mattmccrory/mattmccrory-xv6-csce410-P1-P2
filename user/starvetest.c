@@ -57,7 +57,7 @@ main(void)
     }
 
     // Keep high-priority work runnable much longer.
-    for (i = 0; i < 100000000; i++)
+    for (i = 0; i < 1000000000; i++)
       ;
 
     printf("HIGH: completed CPU work at priority %d\n",
