@@ -111,7 +111,14 @@ age_ready_queues(void)
 
       p->wait_ticks++;
 
+      dprintf(DBG_SCHED, DBG_TRACE,
+        "aging: pid=%d priority=%d wait_ticks=%d",
+        p->pid, p->priority, p->wait_ticks);
+
       if (p->wait_ticks >= PRIORITY_AGING_THRESHOLD) {
+        dprintf(DBG_SCHED, DBG_INFO,
+          "promoting pid=%d from priority=%d",
+          p->pid, p->priority);
         dequeue(p);
         p->priority--;
         enqueue(p);
@@ -591,7 +598,7 @@ scheduler(void)
     intr_off();
 
     age_ready_queues();
-    
+
     // Find the highest-priority nonempty queue.
     p = 0;
     for (int priority = 0; priority < NB_PRIORITY_LEVELS; priority++) {
