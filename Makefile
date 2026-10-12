@@ -154,6 +154,7 @@ UPROGS=\
 	$U/_sync\
 	$U/_dbg\
 	$U/_prioritytest\
+	$U/_starvetest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
