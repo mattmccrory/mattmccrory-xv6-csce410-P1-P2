@@ -94,6 +94,7 @@ struct proc {
   struct proc *qnext;
   struct proc *qprev;
   int in_queue;
+  int wait_ticks;
 
   // wait_lock must be held when using this:
   struct proc *parent; // Parent process

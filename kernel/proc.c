@@ -85,6 +85,45 @@ dequeue(struct proc *p)
   p->in_queue = 0;
 }
 
+
+#define PRIORITY_AGING_THRESHOLD 8
+
+// Promote queued processes that have waited too long.
+// The assignment runs with one CPU, so queue operations
+// are serialized by the scheduler and process execution.
+static void
+age_ready_queues(void)
+{
+  // Priority 0 is already the highest priority.
+  for (int priority = 1;
+       priority < NB_PRIORITY_LEVELS;
+       priority++) {
+    struct proc *p = ready_queues[priority].head;
+
+    while (p != 0) {
+      acquire(&p->lock);
+
+      // Save the next entry before possibly moving p.
+      struct proc *next = p->qnext;
+
+      if (p->state != RUNNABLE || !p->in_queue)
+        panic("aging: invalid queued process");
+
+      p->wait_ticks++;
+
+      if (p->wait_ticks >= PRIORITY_AGING_THRESHOLD) {
+        dequeue(p);
+        p->priority--;
+        enqueue(p);
+      }
+
+      release(&p->lock);
+      p = next;
+    }
+  }
+}
+
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
@@ -195,6 +234,7 @@ found:
   p->qnext = 0;
   p->qprev = 0;
   p->in_queue = 0;
+  p->wait_ticks = 0;
 
   dprintf(DBG_PROC, DBG_INFO, "process slot allocated: pid=%d", p->pid);
 
@@ -248,6 +288,7 @@ freeproc(struct proc *p)
   p->qnext = 0;
   p->qprev = 0;
   p->in_queue = 0;
+  p->wait_ticks = 0;
 
   p->state = UNUSED;
 }
