@@ -590,6 +590,8 @@ scheduler(void)
     intr_on();
     intr_off();
 
+    age_ready_queues();
+    
     // Find the highest-priority nonempty queue.
     p = 0;
     for (int priority = 0; priority < NB_PRIORITY_LEVELS; priority++) {
