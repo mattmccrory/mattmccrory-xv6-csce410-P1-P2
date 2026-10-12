@@ -138,6 +138,31 @@ sys_kill(void)
   return kkill(pid);
 }
 
+
+uint64
+sys_setpriority(void)
+{
+  int priority;
+  argint(0, &priority);
+
+  if (priority < 0 || priority >= NB_PRIORITY_LEVELS)
+    return -1;
+
+  struct proc *p = myproc();
+  if (p->priority == priority)
+    return 0;
+
+  p->priority = priority;
+  yield();
+  return 0;
+}
+
+uint64
+sys_getpriority(void)
+{
+  return myproc()->priority;
+}
+
 // return how many clock tick interrupts have occurred
 // since start.
 uint64
